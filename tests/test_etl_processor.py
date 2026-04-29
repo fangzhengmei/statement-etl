@@ -33,6 +33,35 @@ class TestETLProcessor:
         assert result["records_imported"] == 5
         assert result["errors"] == 0
         assert result["bank_type"] == "icbc"
+        
+        with processor.db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT transaction_date, amount, balance, description, counterparty FROM transactions ORDER BY id')
+            rows = cursor.fetchall()
+            
+            assert len(rows) == 5
+            
+            for row in rows:
+                transaction_date, amount, balance, description, counterparty = row
+                
+                assert transaction_date is not None, "日期字段不能为空"
+                assert transaction_date != "", "日期字段不能为空字符串"
+                assert len(transaction_date) >= 8, f"日期格式不正确: {transaction_date}"
+                
+                assert amount is not None, "金额字段不能为空"
+                assert amount != 0, "金额不能为零"
+                
+                assert balance is not None, "余额字段不能为空"
+                
+                assert description is not None and description != "", "交易描述不能为空"
+            
+            amounts = [row[1] for row in rows]
+            assert -50.0 in amounts, "应该有 -50.00 的消费记录"
+            assert 5000.0 in amounts, "应该有 5000.00 的工资收入记录"
+            assert -120.5 in amounts, "应该有 -120.50 的消费记录"
+            assert -3000.0 in amounts, "应该有 -3000.00 的转账记录"
+            assert 200.0 in amounts, "应该有 200.00 的收入记录"
     
     def test_process_cmb_file(self, temp_db_path, temp_error_dir, cmb_test_file):
         processor = ETLProcessor(
@@ -48,6 +77,37 @@ class TestETLProcessor:
         assert result["records_imported"] == 5
         assert result["errors"] == 0
         assert result["bank_type"] == "cmb"
+        
+        with processor.db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT transaction_date, amount, balance, description, counterparty FROM transactions ORDER BY id')
+            rows = cursor.fetchall()
+            
+            assert len(rows) == 5
+            
+            for row in rows:
+                transaction_date, amount, balance, description, counterparty = row
+                
+                assert transaction_date is not None, "日期字段不能为空"
+                assert transaction_date != "", "日期字段不能为空字符串"
+                assert len(transaction_date) >= 8, f"日期格式不正确: {transaction_date}"
+                
+                assert amount is not None, "金额字段不能为空"
+                assert amount != 0, "金额不能为零"
+                
+                assert balance is not None, "余额字段不能为空"
+                
+                assert description is not None and description != "", "交易描述不能为空"
+                
+                assert counterparty is not None and counterparty != "", "交易对手不能为空"
+            
+            amounts = [row[1] for row in rows]
+            assert -50.0 in amounts, "应该有 -50.00 的消费记录"
+            assert 5000.0 in amounts, "应该有 5000.00 的工资收入记录"
+            assert -120.5 in amounts, "应该有 -120.50 的消费记录"
+            assert -3000.0 in amounts, "应该有 -3000.00 的转账记录"
+            assert 200.0 in amounts, "应该有 200.00 的收入记录"
     
     def test_idempotent_import(self, temp_db_path, temp_error_dir, icbc_test_file):
         processor = ETLProcessor(
