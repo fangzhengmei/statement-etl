@@ -173,3 +173,120 @@ class TestETLProcessor:
             cursor.execute('SELECT COUNT(*) FROM transactions')
             count = cursor.fetchone()[0]
             assert count == 1
+    
+    def test_process_cmb_split_columns_file(self, temp_db_path, temp_error_dir, cmb_split_columns_file):
+        processor = ETLProcessor(
+            db_path=temp_db_path,
+            error_dir=temp_error_dir
+        )
+        
+        result = processor.process_file(cmb_split_columns_file, bank_type="cmb")
+        
+        assert result["success"] is True
+        assert result["already_imported"] is False
+        assert result["records_processed"] == 5
+        assert result["records_imported"] == 5
+        assert result["errors"] == 0
+        assert result["bank_type"] == "cmb"
+        
+        with processor.db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT amount FROM transactions ORDER BY id')
+            amounts = [row[0] for row in cursor.fetchall()]
+            
+            assert amounts[0] == -50.0
+            assert amounts[1] == 5000.0
+            assert amounts[2] == -120.5
+            assert amounts[3] == -3000.0
+            assert amounts[4] == 200.0
+    
+    def test_auto_detect_bank_format_icbc(self, temp_db_path, temp_error_dir, icbc_test_file):
+        processor = ETLProcessor(
+            db_path=temp_db_path,
+            error_dir=temp_error_dir
+        )
+        
+        result = processor.process_file(icbc_test_file, bank_type=None)
+        
+        assert result["success"] is True
+        assert result["already_imported"] is False
+        assert result["bank_type"] == "icbc"
+        assert result["records_imported"] == 5
+    
+    def test_auto_detect_bank_format_cmb(self, temp_db_path, temp_error_dir, cmb_split_columns_file):
+        processor = ETLProcessor(
+            db_path=temp_db_path,
+            error_dir=temp_error_dir
+        )
+        
+        result = processor.process_file(cmb_split_columns_file, bank_type=None)
+        
+        assert result["success"] is True
+        assert result["already_imported"] is False
+        assert result["bank_type"] == "cmb"
+        assert result["records_imported"] == 5
+    
+    def test_db_path_without_directory(self, temp_error_dir):
+        import tempfile
+        import os
+        
+        original_cwd = os.getcwd()
+        temp_dir = tempfile.mkdtemp()
+        
+        try:
+            os.chdir(temp_dir)
+            
+            db_path = "test.db"
+            processor = ETLProcessor(
+                db_path=db_path,
+                error_dir=temp_error_dir
+            )
+            
+            assert os.path.exists(db_path)
+            
+        finally:
+            os.chdir(original_cwd)
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    def test_transaction_rollback_on_failure(self, temp_db_path, temp_error_dir, icbc_test_file):
+        db = DatabaseManager(temp_db_path)
+        
+        test_filename = "test_fail.csv"
+        test_hash = "test_hash_12345"
+        
+        transactions = [
+            {
+                "transaction_date": "2024-01-01",
+                "description": "测试交易",
+                "amount": 100.0,
+                "balance": 1000.0,
+                "counterparty": "测试方",
+                "category": "测试",
+                "raw_data": ""
+            }
+        ]
+        
+        try:
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('BEGIN TRANSACTION')
+            
+            cursor.execute('''
+                INSERT INTO files (filename, file_hash, bank_type)
+                VALUES (?, ?, ?)
+            ''', (test_filename, test_hash, "icbc"))
+            
+            cursor.execute('SELECT COUNT(*) FROM files WHERE file_hash = ?', (test_hash,))
+            assert cursor.fetchone()[0] == 1
+            
+            conn.rollback()
+            
+        finally:
+            conn.close()
+        
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM files WHERE file_hash = ?', (test_hash,))
+            assert cursor.fetchone()[0] == 0

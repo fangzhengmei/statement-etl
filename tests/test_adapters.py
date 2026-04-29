@@ -90,3 +90,40 @@ class TestCMBAdapter:
         adapter = CMBAdapter()
         result = adapter.normalize_amount("5000.00")
         assert result == 5000.00
+
+
+class TestAmountNormalization:
+    def test_normalize_amount_none(self):
+        adapter = ICBCAdapter()
+        result = adapter.normalize_amount(None)
+        assert result == 0.0
+    
+    def test_normalize_amount_empty_string(self):
+        adapter = ICBCAdapter()
+        result = adapter.normalize_amount("")
+        assert result == 0.0
+    
+    def test_normalize_amount_whitespace(self):
+        adapter = ICBCAdapter()
+        result = adapter.normalize_amount("   ")
+        assert result == 0.0
+    
+    def test_normalize_amount_null_string(self):
+        adapter = ICBCAdapter()
+        result = adapter.normalize_amount("null")
+        assert result == 0.0
+    
+    def test_normalize_amount_none_string(self):
+        adapter = ICBCAdapter()
+        result = adapter.normalize_amount("None")
+        assert result == 0.0
+    
+    def test_normalize_amount_nan_string(self):
+        adapter = ICBCAdapter()
+        result = adapter.normalize_amount("NaN")
+        assert result == 0.0
+    
+    def test_normalize_amount_invalid_string(self):
+        adapter = ICBCAdapter()
+        result = adapter.normalize_amount("abc")
+        assert result == 0.0

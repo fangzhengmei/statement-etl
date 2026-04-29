@@ -8,7 +8,9 @@ import pandas as pd
 class DatabaseManager:
     def __init__(self, db_path: str = "data/transactions.db"):
         self.db_path = db_path
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        dir_path = os.path.dirname(db_path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
         self._init_db()
 
     def get_connection(self):
@@ -122,11 +124,8 @@ class DatabaseManager:
             for txn in transactions:
                 txn_hash = self.generate_transaction_hash(txn)
                 
-                if self.is_transaction_imported(txn_hash):
-                    continue
-                
                 cursor.execute('''
-                    INSERT INTO transactions (
+                    INSERT OR IGNORE INTO transactions (
                         file_id, transaction_hash, transaction_date, description,
                         amount, balance, counterparty, category, raw_data
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -172,3 +171,86 @@ class DatabaseManager:
         
         with self.get_connection() as conn:
             return pd.read_sql_query(query, conn, params=params)
+    
+    def import_file_transactional(self, 
+                                   filename: str, 
+                                   file_hash: str, 
+                                   bank_type: str,
+                                   transactions: List[Dict[str, Any]],
+                                   errors: List[Dict[str, Any]]) -> Dict[str, Any]:
+        result = {
+            "success": False,
+            "file_id": None,
+            "records_imported": 0,
+            "errors_recorded": 0,
+            "message": ""
+        }
+        
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            cursor.execute('BEGIN TRANSACTION')
+            
+            cursor.execute('''
+                INSERT INTO files (filename, file_hash, bank_type)
+                VALUES (?, ?, ?)
+            ''', (filename, file_hash, bank_type))
+            file_id = cursor.lastrowid
+            
+            imported_count = 0
+            for txn in transactions:
+                txn_hash = self.generate_transaction_hash(txn)
+                
+                cursor.execute('''
+                    INSERT OR IGNORE INTO transactions (
+                        file_id, transaction_hash, transaction_date, description,
+                        amount, balance, counterparty, category, raw_data
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    file_id,
+                    txn_hash,
+                    txn.get('transaction_date'),
+                    txn.get('description'),
+                    txn.get('amount'),
+                    txn.get('balance'),
+                    txn.get('counterparty'),
+                    txn.get('category'),
+                    txn.get('raw_data', '')
+                ))
+                if cursor.rowcount > 0:
+                    imported_count += 1
+            
+            for error in errors:
+                cursor.execute('''
+                    INSERT INTO error_records (file_id, row_index, raw_data, error_message)
+                    VALUES (?, ?, ?, ?)
+                ''', (
+                    file_id,
+                    error.get("row_index"),
+                    str(error.get("row_data", "")),
+                    error.get("message", "")
+                ))
+            
+            cursor.execute('''
+                UPDATE files
+                SET record_count = ?, error_count = ?
+                WHERE id = ?
+            ''', (len(transactions), len(errors), file_id))
+            
+            conn.commit()
+            
+            result["success"] = True
+            result["file_id"] = file_id
+            result["records_imported"] = imported_count
+            result["errors_recorded"] = len(errors)
+            result["message"] = f"成功导入 {imported_count} 条记录"
+            
+        except Exception as e:
+            conn.rollback()
+            result["message"] = f"事务执行失败，已回滚: {str(e)}"
+            raise
+        finally:
+            conn.close()
+        
+        return result

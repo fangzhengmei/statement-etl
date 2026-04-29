@@ -59,12 +59,22 @@ class BaseBankAdapter(ABC):
         if pd.isna(amount_str):
             return 0.0
         
+        if amount_str is None:
+            return 0.0
+        
         amount_str = str(amount_str).strip()
+        
+        if amount_str == "" or amount_str.lower() in ("null", "none", "nan"):
+            return 0.0
+        
         amount_str = amount_str.replace(',', '')
         amount_str = amount_str.replace('￥', '')
         amount_str = amount_str.replace('¥', '')
         amount_str = amount_str.replace('CNY', '')
         amount_str = amount_str.strip()
+        
+        if not amount_str:
+            return 0.0
         
         try:
             return float(amount_str)

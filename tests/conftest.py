@@ -37,3 +37,8 @@ def cmb_test_file(test_data_dir):
 @pytest.fixture
 def icbc_with_errors_file(test_data_dir):
     return os.path.join(test_data_dir, "icbc_with_errors.csv")
+
+
+@pytest.fixture
+def cmb_split_columns_file(test_data_dir):
+    return os.path.join(test_data_dir, "cmb_split_columns.csv")

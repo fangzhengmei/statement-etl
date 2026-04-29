@@ -83,12 +83,6 @@ class ETLProcessor:
             result["records_processed"] = len(transactions) + len(errors)
             result["errors"] = len(errors)
             
-            file_id = self.db.create_file_record(
-                os.path.basename(file_path),
-                file_hash,
-                adapter.bank_type
-            )
-            
             for txn in transactions:
                 txn["category"] = self.classifier.classify(
                     txn.get("description", ""),
@@ -96,24 +90,21 @@ class ETLProcessor:
                 )
                 txn["raw_data"] = str(txn.get("raw_data", ""))
             
-            self.db.insert_transactions(transactions, file_id)
-            result["records_imported"] = len(transactions)
+            db_result = self.db.import_file_transactional(
+                os.path.basename(file_path),
+                file_hash,
+                adapter.bank_type,
+                transactions,
+                errors
+            )
             
-            for error in errors:
-                self.db.insert_error(
-                    file_id,
-                    error.get("row_index"),
-                    str(error.get("row_data", "")),
-                    error.get("message", "")
-                )
-            
-            self.db.update_file_stats(file_id, len(transactions), len(errors))
+            result["records_imported"] = db_result["records_imported"]
             
             if errors:
                 self.error_handler.save_error_records(file_path)
             
             result["success"] = True
-            result["message"] = f"处理完成: {len(transactions)} 条记录, {len(errors)} 个错误"
+            result["message"] = f"处理完成: {db_result['records_imported']} 条记录, {len(errors)} 个错误"
             self.logger.info(result["message"])
             
             return result
